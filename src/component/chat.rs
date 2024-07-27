@@ -1,7 +1,8 @@
 use std::collections::LinkedList;
 
-use crossterm::event::{Event, KeyCode, KeyModifiers, MouseEventKind};
+use crossterm::event::{Event, KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::backend::Backend;
+use ratatui::layout::Position;
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::Terminal;
 use ratatui::{
@@ -21,6 +22,9 @@ pub struct MessagesComponent {
     cursor: (u16, u16),
     lock_on_bottom: bool,
     pub(super) wait_token: bool,
+    area: Rect,
+    last_mouse_event: MouseEvent,
+    active: bool,
 }
 
 impl MessagesComponent {
@@ -30,6 +34,20 @@ impl MessagesComponent {
             cursor: (0, 0),
             lock_on_bottom: true,
             wait_token: false,
+            active: true,
+            area: Rect::default(),
+            last_mouse_event: MouseEvent {
+                row: 0,
+                column: 0,
+                kind: MouseEventKind::Moved,
+                modifiers: KeyModifiers::empty(),
+            },
+        }
+    }
+
+    fn update_active(&mut self, event: MouseEvent) {
+        if event.kind == MouseEventKind::Down(MouseButton::Left) {
+            self.active = self.area.contains(Position::new(event.column, event.row))
         }
     }
 
@@ -37,6 +55,7 @@ impl MessagesComponent {
     where
         Self: Sized,
     {
+        self.area = area;
         let mut text = Text::default();
         for content in &self.contents {
             let style = match content.role {
@@ -70,7 +89,13 @@ impl MessagesComponent {
         }
 
         let paragraph = Paragraph::new(text)
-            .block(Block::bordered().title(format!("{:?}", self.cursor)))
+            .block(if self.active {
+                Block::bordered()
+                    .title(format!("{:?}", self.cursor))
+                    .green()
+            } else {
+                Block::bordered().title(format!("{:?}", self.cursor)).gray()
+            })
             .scroll(self.cursor);
         frame.render_widget(paragraph, area);
     }
@@ -115,24 +140,41 @@ impl MessagesComponent {
                 });
             }
 
-            Input::Event(Event::Mouse(event)) => match event.kind {
-                MouseEventKind::ScrollDown => {
-                    if event.modifiers.contains(KeyModifiers::CONTROL) {
-                        self.cursor.1 += 1;
-                    } else {
-                        self.cursor.0 += 1;
+            Input::Event(Event::Mouse(event)) => {
+                match event.kind {
+                    MouseEventKind::ScrollDown => {
+                        if event.modifiers.contains(KeyModifiers::CONTROL) {
+                            self.cursor.1 += 6;
+                        } else {
+                            self.cursor.0 += 3;
+                        }
                     }
-                }
-                MouseEventKind::ScrollUp => {
-                    if event.modifiers.contains(KeyModifiers::CONTROL) {
-                        self.cursor.1 = self.cursor.1.max(1) - 1;
-                    } else {
-                        self.cursor.0 = self.cursor.0.max(1) - 1;
-                        self.lock_on_bottom = false;
+                    MouseEventKind::ScrollUp => {
+                        if event.modifiers.contains(KeyModifiers::CONTROL) {
+                            self.cursor.1 = self.cursor.1.max(6) - 6;
+                        } else {
+                            self.cursor.0 = self.cursor.0.max(3) - 3;
+                            self.lock_on_bottom = false;
+                        }
                     }
+                    MouseEventKind::Drag(MouseButton::Left) if self.active => {
+                        let (delta_y, delta_x) = (
+                            event.row as i16 - self.last_mouse_event.row as i16,
+                            event.column as i16 - self.last_mouse_event.column as i16,
+                        );
+                        if delta_x != 0 {
+                            self.cursor.1 = (self.cursor.1 as i16 - delta_x).max(0) as u16;
+                        }
+                        if delta_y != 0 {
+                            self.cursor.0 = (self.cursor.0 as i16 - delta_y).max(0) as u16;
+                            self.lock_on_bottom = false;
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
-            },
+                self.last_mouse_event = event;
+                self.update_active(event);
+            }
             _ => {}
         }
     }
@@ -215,7 +257,7 @@ impl ChatComponent {
                 let _ = terminal.clear();
             }
             Input::Event(Event::Key(input))
-                if (input.code == KeyCode::Char('s')
+                if (input.code == KeyCode::Char('j')
                     && input.modifiers.contains(KeyModifiers::CONTROL)) =>
             {
                 if !self.messages.wait_token {
