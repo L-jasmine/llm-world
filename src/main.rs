@@ -4,13 +4,11 @@ use chat::im_channel;
 use clap::Parser;
 use llm::local_llm;
 use simple_llama::llm::{self as llama, PromptTemplate};
-use tool_env::ScriptExecutor;
 
 mod chat;
 mod component;
 mod debug_tool;
 mod llm;
-mod tool_env;
 
 #[derive(Debug, clap::Parser)]
 struct Args {
@@ -23,9 +21,6 @@ struct Args {
 
     #[arg(long)]
     debug_llm: bool,
-
-    #[arg(short, long, value_enum, default_value = "none")]
-    engine: Engine,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -78,24 +73,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (chan_close_tx, chan_close_rx) = crossbeam::channel::bounded(1);
 
     let mut chan = im_channel::ImChannel::new(chan_close_rx);
-
-    let (tx, rx) = chan.register(tool_env::filter);
-    match cli.engine {
-        Engine::Lua => {
-            std::thread::spawn(move || {
-                let script_executor =
-                    ScriptExecutor::new(tool_env::lua::new_lua().unwrap(), rx, tx);
-                script_executor.run_loop()
-            });
-        }
-        Engine::Rhai => {
-            std::thread::spawn(move || {
-                let script_executor = ScriptExecutor::new(tool_env::rhai::new_rhai(), rx, tx);
-                script_executor.run_loop()
-            });
-        }
-        Engine::None => {}
-    };
 
     let llama_result;
 
