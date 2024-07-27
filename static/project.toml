@@ -1,9 +1,9 @@
-model_path = "../models/Gemma-2-9B-Chinese-Chat-Q5_K_M.gguf"
+model_path = "../models/causallm_7b.Q6_K.gguf"
 prompts = "./static/prompt.toml"
-template = "gemma2"
+template = "qwen"
 
 [run]
-ctx_size = 2048
+ctx_size = 8192
 batch_size = 128
 n_gpu_layers = 100
 
