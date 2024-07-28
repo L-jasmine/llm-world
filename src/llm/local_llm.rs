@@ -3,12 +3,7 @@ use simple_llama::{
     Content,
 };
 
-use crate::chat::im_channel::{Message, MessageRx, MessageTx, Role};
-
-struct ScriptHook {
-    rx: MessageRx,
-    tx: MessageTx,
-}
+use crate::chat::im_channel::{Message, MessageRx, MessageTx};
 
 #[derive(Debug, Clone)]
 pub enum Token {
@@ -17,74 +12,78 @@ pub enum Token {
     End(String),
 }
 
-impl ScriptHook {
-    fn get_input(&mut self) -> anyhow::Result<Option<Content>> {
-        while let Ok(input) = self.rx.recv() {
-            match input {
-                Message {
-                    role,
-                    contont: Token::End(message),
-                } if role == Role::User => {
-                    let c = simple_llama::llm::Content { role, message };
-                    return Ok(Some(c));
-                }
-
-                _ => {}
-            }
-        }
-        Ok(None)
-    }
-
-    fn token_callback(&mut self, token: Token) -> anyhow::Result<()> {
-        self.tx.send(Message {
-            role: Role::Assistant,
-            contont: token,
-        })?;
-        Ok(())
-    }
-}
-
 pub struct LocalLlama {
     ctx: LlamaCtx,
-    hook: ScriptHook,
     prompts: Vec<Content>,
+    rx: MessageRx,
+    tx: MessageTx,
 }
 
 impl LocalLlama {
     pub fn new(ctx: LlamaCtx, prompts: Vec<Content>, rx: MessageRx, tx: MessageTx) -> Self {
-        let hook = ScriptHook { rx, tx };
-        LocalLlama { ctx, hook, prompts }
+        LocalLlama {
+            ctx,
+            prompts,
+            rx,
+            tx,
+        }
+    }
+
+    fn wait_input(&mut self) -> anyhow::Result<()> {
+        loop {
+            let message = self.rx.recv()?;
+            match message {
+                Message::GenerateByUser(user) => {
+                    self.prompts.push(user);
+                    self.prompts.push(Content {
+                        role: simple_llama::Role::Assistant,
+                        message: String::new(),
+                    });
+                }
+                Message::Generate(assistant) => match self.prompts.last_mut() {
+                    Some(content) => *content = assistant,
+                    None => {
+                        self.prompts.push(assistant);
+                    }
+                },
+                Message::Assistant(_) => {
+                    continue;
+                }
+            }
+            break Ok(());
+        }
     }
 
     pub fn run_loop(&mut self) -> anyhow::Result<()> {
         loop {
-            let c = match self.hook.get_input()? {
-                Some(c) => c,
-                None => return Err(anyhow::anyhow!("input is clone")),
-            };
-            self.prompts.push(c);
+            self.wait_input()?;
 
-            self.hook.token_callback(Token::Start)?;
+            self.tx.send(Message::Assistant(Token::Start))?;
             let mut stream = self.ctx.chat(&self.prompts, SimpleOption::Temp(0.9))?;
 
             for token in &mut stream {
-                self.hook.token_callback(Token::Chunk(token))?;
+                self.tx.send(Message::Assistant(Token::Chunk(token)))?;
             }
 
             let message: String = stream.into();
-            self.hook.token_callback(Token::End(message.clone()))?;
-            self.prompts.push(Content {
-                role: Role::Assistant,
-                message,
-            });
+            self.prompts
+                .last_mut()
+                .map(|c| c.message.push_str(&message));
+            let last_message = self
+                .prompts
+                .last()
+                .map(|c| c.message.clone())
+                .unwrap_or_default();
+
+            self.tx.send(Message::Assistant(Token::End(last_message)))?;
         }
     }
 
     pub fn filter(message: &Message) -> Option<Message> {
-        if message.role != Role::Assistant {
-            Some(message.clone())
-        } else {
+        if matches!(message, Message::Assistant(..)) {
             None
+        } else {
+            Some(message.clone())
         }
     }
 }

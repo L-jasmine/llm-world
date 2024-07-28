@@ -103,42 +103,19 @@ impl MessagesComponent {
 
     pub fn handler_input(&mut self, input: Input) {
         match input {
-            Input::Message(Message {
-                role: Role::Assistant,
-                contont: Token::Start,
-            }) => {
+            Input::Message(Message::Assistant(Token::Start)) => {
                 self.wait_token = true;
-                self.contents.push_back(Content {
-                    role: Role::Assistant,
-                    message: String::with_capacity(64),
-                })
             }
-            Input::Message(Message {
-                role: Role::Assistant,
-                contont: Token::Chunk(chunk),
-            }) => {
+            Input::Message(Message::Assistant(Token::Chunk(chunk))) => {
                 if let Some(content) = self.contents.back_mut() {
                     content.message.push_str(&chunk);
                 }
             }
-            Input::Message(Message {
-                role: Role::Assistant,
-                contont: Token::End(chunk),
-            }) => {
+            Input::Message(Message::Assistant(Token::End(chunk))) => {
                 self.wait_token = false;
                 if let Some(content) = self.contents.back_mut() {
                     content.message = chunk;
                 }
-            }
-
-            Input::Message(Message {
-                role: Role::Tool,
-                contont: Token::End(chunk),
-            }) => {
-                self.contents.push_back(Content {
-                    role: Role::Tool,
-                    message: chunk,
-                });
             }
 
             Input::Event(Event::Mouse(event)) => {
@@ -187,6 +164,7 @@ pub struct ChatComponent {
     input: TextArea<'static>,
     exit_n: u8,
     pub event: String,
+    rewrite: bool,
 }
 
 #[derive(Debug)]
@@ -194,6 +172,9 @@ pub enum Input {
     Event(Event),
     Message(Message),
 }
+
+// 新 chat
+// 重写 assistant
 
 impl ChatComponent {
     pub fn new(
@@ -206,6 +187,7 @@ impl ChatComponent {
             exit_n: 0,
             event: String::new(),
             user_tx,
+            rewrite: false,
         }
     }
 
@@ -231,23 +213,45 @@ impl ChatComponent {
         TextArea::default()
     }
 
+    fn pop_last_assaistant(&mut self) {
+        if let Some(content) = self.messages.contents.back_mut() {
+            if content.role == Role::Assistant {
+                self.input.select_all();
+                self.input.cut();
+                self.input.insert_str(&content.message);
+                content.message.clear();
+
+                self.rewrite = true;
+            }
+        }
+    }
+
     fn submit_message(&mut self) {
         let mut new_textarea = Self::new_textarea();
         std::mem::swap(&mut self.input, &mut new_textarea);
         let lines = new_textarea.into_lines();
         let message = lines.join("\n");
 
-        self.user_tx
-            .send(Message {
-                role: Role::User,
-                contont: Token::End(message.clone()),
-            })
-            .unwrap();
+        if self.rewrite {
+            let assistant = self.messages.contents.back_mut().unwrap();
+            assistant.message = message;
+            let assistant = assistant.clone();
 
-        self.messages.contents.push_back(Content {
-            role: Role::User,
-            message,
-        });
+            self.user_tx.send(Message::Generate(assistant)).unwrap();
+            self.rewrite = false;
+        } else {
+            let user = Content {
+                role: Role::User,
+                message,
+            };
+            self.messages.contents.push_back(user.clone());
+            self.messages.contents.push_back(Content {
+                role: Role::Assistant,
+                message: String::new(),
+            });
+
+            self.user_tx.send(Message::GenerateByUser(user)).unwrap();
+        }
         self.messages.lock_on_bottom = true;
     }
 
@@ -263,6 +267,14 @@ impl ChatComponent {
             {
                 if !self.messages.wait_token {
                     self.submit_message();
+                }
+            }
+            Input::Event(Event::Key(input))
+                if (input.code == KeyCode::Char('r')
+                    && input.modifiers.contains(KeyModifiers::CONTROL)) =>
+            {
+                if !self.messages.wait_token {
+                    self.pop_last_assaistant();
                 }
             }
             Input::Event(Event::Key(input)) if input.code == KeyCode::Esc => {

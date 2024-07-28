@@ -1,7 +1,6 @@
-use crate::{
-    chat::im_channel::{Message, Role},
-    llm::local_llm::Token,
-};
+use simple_llama::{Content, Role};
+
+use crate::{chat::im_channel::Message, llm::local_llm::Token};
 
 pub fn echo_assistant(
     tx: crossbeam::channel::Sender<Message>,
@@ -10,20 +9,17 @@ pub fn echo_assistant(
     std::thread::spawn(move || {
         while let Ok(input) = rx.recv() {
             match input {
-                Message {
-                    role: Role::User,
-                    contont: Token::End(message),
-                } => {
-                    let _ = tx.send(Message {
-                        role: Role::Assistant,
-                        contont: Token::Start,
-                    });
-                    let _ = tx.send(Message {
-                        role: Role::Assistant,
-                        contont: Token::End(message),
-                    });
+                Message::GenerateByUser(user) => {
+                    let _ = tx.send(Message::Assistant(Token::Start));
+                    let _ = tx.send(Message::Assistant(Token::End(user.message)));
                 }
-                _ => {}
+                Message::Generate(assistant) => {
+                    let _ = tx.send(Message::Assistant(Token::Start));
+                    let _ = tx.send(Message::Assistant(Token::End(assistant.message)));
+                }
+                Message::Assistant(_) => {
+                    continue;
+                }
             }
         }
         Ok(())
@@ -37,10 +33,10 @@ pub struct TerminalApp {
 
 impl TerminalApp {
     pub fn filter(message: &Message) -> Option<Message> {
-        if message.role != Role::User {
-            Some(message.clone())
-        } else {
+        if matches!(message, Message::Assistant(..)) {
             None
+        } else {
+            Some(message.clone())
         }
     }
 
@@ -52,10 +48,10 @@ impl TerminalApp {
             if line.starts_with("exit!") {
                 break;
             }
-            let _ = tx.send(Message {
+            let _ = tx.send(Message::GenerateByUser(Content {
                 role: Role::User,
-                contont: Token::End(line),
-            });
+                message: line,
+            }));
         }
     }
 
@@ -87,8 +83,11 @@ impl TerminalApp {
 
             println!("{input:?}");
 
-            if let Role::User = input.role {
-                let _ = self.tx.send(input);
+            match input {
+                Message::Assistant(..) => {}
+                input => {
+                    let _ = self.tx.send(input);
+                }
             }
         }
 

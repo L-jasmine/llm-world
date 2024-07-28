@@ -10,7 +10,7 @@ use ratatui::{
     Frame, Terminal,
 };
 
-use crate::chat::im_channel::{Message, MessageRx, MessageTx, Role};
+use crate::chat::im_channel::{Message, MessageRx, MessageTx};
 
 pub mod chat;
 
@@ -106,7 +106,7 @@ impl App {
     }
 
     pub fn filter(message: &Message) -> Option<Message> {
-        if message.role != Role::User {
+        if matches!(message, Message::Assistant(..)) {
             Some(message.clone())
         } else {
             None

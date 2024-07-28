@@ -1,6 +1,6 @@
-use crate::llm::local_llm::Token;
+use simple_llama::Content;
 
-pub type Role = simple_llama::llm::Role;
+use crate::llm::local_llm::Token;
 
 pub type Chunk = Token;
 
@@ -10,9 +10,10 @@ pub struct MessageConsumer {
 }
 
 #[derive(Clone, Debug)]
-pub struct Message {
-    pub role: Role,
-    pub contont: Chunk,
+pub enum Message {
+    GenerateByUser(Content),
+    Generate(Content),
+    Assistant(Chunk),
 }
 
 pub type MessageRx = crossbeam::channel::Receiver<Message>;
