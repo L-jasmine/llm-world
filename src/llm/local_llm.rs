@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
 use simple_llama::{
-    llm::{ChatRequest, LlamaCtx, SimpleOption},
+    llm::{LlamaCtx, SimpleOption},
     Content,
 };
 
@@ -26,7 +24,7 @@ impl ScriptHook {
                 Message {
                     role,
                     contont: Token::End(message),
-                } if role == Role::User || role == Role::Tool => {
+                } if role == Role::User => {
                     let c = simple_llama::llm::Content { role, message };
                     return Ok(Some(c));
                 }
@@ -49,11 +47,11 @@ impl ScriptHook {
 pub struct LocalLlama {
     ctx: LlamaCtx,
     hook: ScriptHook,
-    prompts: Vec<Arc<Content>>,
+    prompts: Vec<Content>,
 }
 
 impl LocalLlama {
-    pub fn new(ctx: LlamaCtx, prompts: Vec<Arc<Content>>, rx: MessageRx, tx: MessageTx) -> Self {
+    pub fn new(ctx: LlamaCtx, prompts: Vec<Content>, rx: MessageRx, tx: MessageTx) -> Self {
         let hook = ScriptHook { rx, tx };
         LocalLlama { ctx, hook, prompts }
     }
@@ -64,13 +62,10 @@ impl LocalLlama {
                 Some(c) => c,
                 None => return Err(anyhow::anyhow!("input is clone")),
             };
-            self.prompts.push(Arc::new(c));
+            self.prompts.push(c);
 
             self.hook.token_callback(Token::Start)?;
-            let mut stream = self.ctx.chat(ChatRequest {
-                prompts: self.prompts.clone(),
-                simple_option: SimpleOption::Temp(0.9),
-            })?;
+            let mut stream = self.ctx.chat(&self.prompts, SimpleOption::Temp(0.9))?;
 
             for token in &mut stream {
                 self.hook.token_callback(Token::Chunk(token))?;
@@ -78,10 +73,10 @@ impl LocalLlama {
 
             let message: String = stream.into();
             self.hook.token_callback(Token::End(message.clone()))?;
-            self.prompts.push(Arc::new(Content {
+            self.prompts.push(Content {
                 role: Role::Assistant,
                 message,
-            }));
+            });
         }
     }
 

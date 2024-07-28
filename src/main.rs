@@ -1,4 +1,4 @@
-use std::{collections::HashMap, error::Error, num::NonZeroU32, sync::Arc};
+use std::{collections::HashMap, error::Error, num::NonZeroU32};
 
 use chat::im_channel;
 use clap::Parser;
@@ -86,7 +86,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         let mut prompt: HashMap<String, Vec<simple_llama::llm::Content>> = toml::from_str(&prompt)?;
         let prompts = prompt.remove("content").unwrap();
-        let prompts = prompts.into_iter().map(Arc::new).collect();
 
         let template = project
             .templates
