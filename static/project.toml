@@ -1,17 +1,17 @@
 model_path = "../models/causallm_7b.Q6_K.gguf"
-prompts = "./static/prompt.toml"
 template = "qwen"
+prompts = "./static/prompt.toml"
 
 [run]
 ctx_size = 8192
-batch_size = 128
+n_batch = 128
 n_gpu_layers = 100
 
 [templates.qwen]
 header_prefix = "<|im_start|>"
 header_suffix = "\n"
 end_of_content = "<|im_end|>\n"
-stops = ["<|im_end|>"]
+stops = ["<|im_end|>", "<|im_end|>\n", "<|im_start|>"]
 
 [templates.llama3]
 header_prefix = "<|start_header_id|>"

@@ -69,7 +69,7 @@ impl LocalLlama {
             self.hook.token_callback(Token::Start)?;
             let mut stream = self.ctx.chat(ChatRequest {
                 prompts: self.prompts.clone(),
-                simple_option: SimpleOption::Temp(0.7),
+                simple_option: SimpleOption::Temp(0.9),
             })?;
 
             for token in &mut stream {

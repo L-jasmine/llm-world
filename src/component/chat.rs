@@ -92,7 +92,8 @@ impl MessagesComponent {
             .block(if self.active {
                 Block::bordered()
                     .title(format!("{:?}", self.cursor))
-                    .green()
+                    .title_bottom("[scroll]")
+                    .gray()
             } else {
                 Block::bordered().title(format!("{:?}", self.cursor)).gray()
             })
