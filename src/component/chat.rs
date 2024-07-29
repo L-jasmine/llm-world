@@ -14,15 +14,13 @@ use ratatui::{
 use simple_llama::llm::{Content, Role};
 use tui_textarea::TextArea;
 
-use crate::chat::im_channel::Message;
-use crate::llm::local_llm::Token;
+use super::Token;
 
 pub struct MessagesComponent {
-    contents: LinkedList<Content>,
+    pub(super) contents: LinkedList<Content>,
     cursor: (u16, u16),
     last_mouse_event: MouseEvent,
     lock_on_bottom: bool,
-    pub(super) wait_token: bool,
     area: Rect,
     active: bool,
 }
@@ -33,7 +31,6 @@ impl MessagesComponent {
             contents,
             cursor: (0, 0),
             lock_on_bottom: true,
-            wait_token: false,
             active: true,
             area: Rect::default(),
             last_mouse_event: MouseEvent {
@@ -134,16 +131,12 @@ impl MessagesComponent {
 
     pub fn handler_input(&mut self, input: Input) {
         match input {
-            Input::Message(Message::Assistant(Token::Start)) => {
-                self.wait_token = true;
-            }
-            Input::Message(Message::Assistant(Token::Chunk(chunk))) => {
+            Input::Message(Token::Chunk(chunk)) => {
                 if let Some(content) = self.contents.back_mut() {
                     content.message.push_str(&chunk);
                 }
             }
-            Input::Message(Message::Assistant(Token::End(chunk))) => {
-                self.wait_token = false;
+            Input::Message(Token::End(chunk)) => {
                 if let Some(content) = self.contents.back_mut() {
                     content.message = chunk;
                 }
@@ -176,8 +169,7 @@ impl MessagesComponent {
 }
 
 pub struct ChatComponent {
-    user_tx: crossbeam::channel::Sender<Message>,
-    messages: MessagesComponent,
+    pub messages: MessagesComponent,
     input: TextArea<'static>,
     cursor_delta: (i16, i16),
     last_mouse_event: MouseEvent,
@@ -191,20 +183,23 @@ pub struct ChatComponent {
 #[derive(Debug)]
 pub enum Input {
     Event(Event),
-    Message(Message),
+    Message(Token),
+}
+
+#[derive(Debug)]
+pub enum Output {
+    Exit,
+    Chat,
+    Normal,
 }
 
 impl ChatComponent {
-    pub fn new(
-        contents: LinkedList<Content>,
-        user_tx: crossbeam::channel::Sender<Message>,
-    ) -> Self {
+    pub fn new(contents: LinkedList<Content>) -> Self {
         Self {
             messages: MessagesComponent::new(contents),
             input: Self::new_textarea(),
             exit_n: 0,
             event: String::new(),
-            user_tx,
             rewrite: false,
             cursor_delta: (0, 0),
             last_mouse_event: MouseEvent {
@@ -249,13 +244,8 @@ impl ChatComponent {
         self.area = input_area;
 
         self.messages.render(frame, messages_area);
-        if self.messages.wait_token {
-            self.input
-                .set_block(Block::bordered().title("Input").yellow())
-        } else {
-            self.input
-                .set_block(Block::bordered().title("Input").gray())
-        }
+        self.input
+            .set_block(Block::bordered().title("Input").gray());
         self.input
             .scroll((-self.cursor_delta.0, -self.cursor_delta.1));
         frame.render_widget(self.input.widget(), input_area);
@@ -287,9 +277,6 @@ impl ChatComponent {
         if self.rewrite {
             let assistant = self.messages.contents.back_mut().unwrap();
             assistant.message = message;
-            let assistant = assistant.clone();
-
-            self.user_tx.send(Message::Generate(assistant)).unwrap();
             self.rewrite = false;
         } else {
             let user = Content {
@@ -301,13 +288,15 @@ impl ChatComponent {
                 role: Role::Assistant,
                 message: String::new(),
             });
-
-            self.user_tx.send(Message::GenerateByUser(user)).unwrap();
         }
         self.messages.lock_on_bottom = true;
     }
 
-    pub fn handler_input<B: Backend>(&mut self, terminal: &mut Terminal<B>, input: Input) -> bool {
+    pub fn handler_input<B: Backend>(
+        &mut self,
+        terminal: &mut Terminal<B>,
+        input: Input,
+    ) -> Output {
         self.event = format!("{:?}", input);
         let is_event = matches!(&input, Input::Event(..));
 
@@ -319,21 +308,20 @@ impl ChatComponent {
                 if (input.code == KeyCode::Char('j')
                     && input.modifiers.contains(KeyModifiers::CONTROL)) =>
             {
-                if !self.messages.wait_token {
-                    self.submit_message();
-                }
+                self.submit_message();
+                return Output::Chat;
             }
             Input::Event(Event::Key(input))
                 if (input.code == KeyCode::Char('r')
                     && input.modifiers.contains(KeyModifiers::CONTROL)) =>
             {
-                if !self.messages.wait_token {
-                    self.pop_last_assaistant();
-                }
+                self.pop_last_assaistant();
             }
             Input::Event(Event::Key(input)) if input.code == KeyCode::Esc => {
                 self.exit_n += 2;
-                return self.exit_n < 3;
+                if self.exit_n >= 3 {
+                    return Output::Exit;
+                }
             }
             Input::Event(Event::Key(input)) => {
                 self.input.input(input);
@@ -353,6 +341,6 @@ impl ChatComponent {
         if is_event {
             self.exit_n = self.exit_n.max(1) - 1;
         }
-        true
+        Output::Normal
     }
 }
