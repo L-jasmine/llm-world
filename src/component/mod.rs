@@ -32,9 +32,10 @@ impl App {
             Constraint::Length(3),
             Constraint::Min(3),
             Constraint::Length(1),
+            Constraint::Length(1),
         ]);
 
-        let [tabs_area, main_area, help_area] = vertical.areas(f.size());
+        let [tabs_area, main_area, help_area, event_area] = vertical.areas(f.size());
 
         let tabs = Tabs::new(vec!["Chat", "Setting"])
             .select(0)
@@ -44,8 +45,11 @@ impl App {
         f.render_widget(tabs, tabs_area);
         self.chat.render(f, main_area);
 
-        let help_message = Paragraph::new(format!("help... event:{}", self.chat.event));
+        let help_message = Paragraph::new(format!("help: [Ctrl+R rewrite] [Esc+Esc quit]"));
         f.render_widget(help_message, help_area);
+
+        let help_message = Paragraph::new(format!("{}", self.chat.event));
+        f.render_widget(help_message, event_area);
     }
 
     pub fn run_loop(mut self) -> anyhow::Result<()> {
