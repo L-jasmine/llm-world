@@ -84,34 +84,25 @@ fn main() -> Result<(), Box<dyn Error>> {
         toml::from_str(&std::fs::read_to_string(&cli.project_path).unwrap()).unwrap();
     project.run.fill_default_value();
 
-    let (mut ctx, prompts) = {
-        let prompts = loader_prompt(&project.prompts)?;
+    let template = project
+        .templates
+        .get(&project.template)
+        .ok_or(anyhow::anyhow!("template not found"))?
+        .clone();
 
-        {
-            let template = project
-                .templates
-                .get(&project.template)
-                .ok_or(anyhow::anyhow!("template not found"))?
-                .clone();
+    let model_params: simple_llama::llm::LlamaModelParams =
+        simple_llama::llm::LlamaModelParams::default().with_n_gpu_layers(project.run.n_gpu_layers);
 
-            let model_params: simple_llama::llm::LlamaModelParams =
-                simple_llama::llm::LlamaModelParams::default()
-                    .with_n_gpu_layers(project.run.n_gpu_layers);
+    let llm = llama::LlmModel::new(project.model_path, model_params, template)
+        .map_err(|e| anyhow::anyhow!(e))?;
 
-            let llm = llama::LlmModel::new(project.model_path, model_params, template)
-                .map_err(|e| anyhow::anyhow!(e))?;
+    let ctx_params = llama::LlamaContextParams::default()
+        .with_n_ctx(NonZeroU32::new(project.run.ctx_size))
+        .with_n_batch(project.run.n_batch);
 
-            let ctx_params = llama::LlamaContextParams::default()
-                .with_n_ctx(NonZeroU32::new(project.run.ctx_size))
-                .with_n_batch(project.run.n_batch);
+    let mut ctx = llama::LlamaCtx::new(llm, ctx_params).unwrap();
 
-            let ctx = llama::LlamaCtx::new(llm, ctx_params).unwrap();
-
-            (ctx, prompts)
-        }
-    };
-
-    let app = component::App::new(prompts, project.prompts.clone());
+    let app = component::App::new(project.prompts.clone());
 
     let res = app.run_loop(&mut ctx);
 

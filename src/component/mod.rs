@@ -27,28 +27,23 @@ pub struct App {
     pub select_tabs: usize,
     pub chat: chat::ChatComponent,
     pub lab: lab::Lab,
+    pub prompts_path: String,
 }
 
 impl App {
-    pub fn new(prompts: LinkedList<Content>, prompts_path: String) -> Self {
+    pub fn new(prompts_path: String) -> Self {
         Self {
-            chat: chat::ChatComponent::new(prompts),
+            chat: chat::ChatComponent::new(),
             lab: lab::Lab {
-                prompts_path,
-                messages: chat::MessagesComponent::new(Default::default()),
+                prompts_path: prompts_path.clone(),
+                messages: chat::MessagesComponent::new(),
             },
             select_tabs: 0,
+            prompts_path,
         }
     }
 
-    fn prompts(&self) -> &LinkedList<Content> {
-        match self.select_tabs {
-            0 => &self.chat.messages.contents,
-            _ => &self.lab.messages.contents,
-        }
-    }
-
-    pub fn render(&mut self, f: &mut Frame) {
+    pub fn render(&mut self, contents: &LinkedList<Content>, f: &mut Frame) {
         let vertical = Layout::vertical([
             Constraint::Length(3),
             Constraint::Min(3),
@@ -65,8 +60,8 @@ impl App {
 
         f.render_widget(tabs, tabs_area);
         match self.select_tabs {
-            0 => self.chat.render(f, main_area),
-            _ => self.lab.render(f, main_area),
+            0 => self.chat.render(contents, f, main_area),
+            _ => self.lab.render(contents, f, main_area),
         }
 
         let help_message = Paragraph::new(format!("help: [Ctrl+R rewrite] [Esc+Esc quit]"));
@@ -76,16 +71,34 @@ impl App {
         f.render_widget(help_message, event_area);
     }
 
-    pub fn handler_input(&mut self, input: Input) -> anyhow::Result<Output> {
+    pub fn handler_input(
+        &mut self,
+        input: Input,
+        contents: &mut LinkedList<Content>,
+    ) -> anyhow::Result<Output> {
         match input {
             Input::Event(Event::Key(event)) if event.code == KeyCode::Tab => {
                 self.select_tabs = (self.select_tabs + 1) % 2;
                 Ok(Output::Normal)
             }
+            Input::Message(token) => match token {
+                Token::End(end) => {
+                    if let Some(c) = contents.back_mut() {
+                        c.message = end;
+                    }
+                    Ok(Output::Normal)
+                }
+                Token::Chunk(chunk) => {
+                    if let Some(c) = contents.back_mut() {
+                        c.message.push_str(&chunk);
+                    }
+                    Ok(Output::Normal)
+                }
+            },
 
             input => match self.select_tabs {
-                0 => Ok(self.chat.handler_input(input)),
-                _ => self.lab.handler_input(input),
+                0 => Ok(self.chat.handler_input(input, contents)),
+                _ => self.lab.handler_input(input, contents),
             },
         }
     }
@@ -99,22 +112,23 @@ impl App {
         let mut terminal = Terminal::new(backend)?;
 
         let mut main_loop = || -> anyhow::Result<()> {
+            let mut prompts = crate::loader_prompt(&self.prompts_path)?;
             let mut output = Output::Normal;
             let mut stream: Option<LlamaModelChatStream<_>> = None;
             let mut start_content = None;
 
             loop {
-                terminal.draw(|f| self.render(f))?;
+                terminal.draw(|f| self.render(&prompts, f))?;
 
                 match output {
                     Output::Exit => break,
                     Output::Chat => {
-                        if let Some(c) = self.prompts().back() {
+                        if let Some(c) = prompts.back() {
                             start_content = Some(c.message.clone());
                         }
                         stream = Some(
                             llama
-                                .chat(self.prompts(), simple_llama::SimpleOption::Temp(0.9))
+                                .chat(&prompts, simple_llama::SimpleOption::Temp(0.9))
                                 .unwrap(),
                         )
                     }
@@ -145,7 +159,7 @@ impl App {
                     Input::Event(event::read()?)
                 };
 
-                output = self.handler_input(input)?;
+                output = self.handler_input(input, &mut prompts)?;
             }
             Ok(())
         };

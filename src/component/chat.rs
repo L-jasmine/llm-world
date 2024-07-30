@@ -15,7 +15,6 @@ use tui_textarea::TextArea;
 use super::Token;
 
 pub struct MessagesComponent {
-    pub(super) contents: LinkedList<Content>,
     cursor: (u16, u16),
     last_mouse_event: MouseEvent,
     lock_on_bottom: bool,
@@ -24,9 +23,8 @@ pub struct MessagesComponent {
 }
 
 impl MessagesComponent {
-    pub fn new(contents: LinkedList<Content>) -> Self {
+    pub fn new() -> Self {
         Self {
-            contents,
             cursor: (0, 0),
             lock_on_bottom: true,
             active: true,
@@ -50,10 +48,11 @@ impl MessagesComponent {
         self.last_mouse_event = event;
     }
 
-    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
+    pub fn render(&mut self, contents: &LinkedList<Content>, frame: &mut Frame, area: Rect) {
         self.area = area;
         let mut text = Text::default();
-        for content in &self.contents {
+        let contents = contents.into_iter();
+        for content in contents {
             let style = match content.role {
                 Role::Assistant => Style::new().bg(Color::Cyan),
                 Role::User => Style::new().bg(Color::Yellow),
@@ -76,7 +75,7 @@ impl MessagesComponent {
                     } else {
                         len += 2;
                     }
-                    if len >= max_len {
+                    if len >= max_len || c == '\n' {
                         text.extend(Line::raw(s).style(style));
                         s = String::with_capacity(max_len);
                         len = 0;
@@ -126,17 +125,6 @@ impl MessagesComponent {
 
     pub fn handler_input(&mut self, input: Input) {
         match input {
-            Input::Message(Token::Chunk(chunk)) => {
-                if let Some(content) = self.contents.back_mut() {
-                    content.message.push_str(&chunk);
-                }
-            }
-            Input::Message(Token::End(chunk)) => {
-                if let Some(content) = self.contents.back_mut() {
-                    content.message = chunk;
-                }
-            }
-
             Input::Event(Event::Mouse(event)) => {
                 match event.kind {
                     MouseEventKind::ScrollDown => {
@@ -189,9 +177,9 @@ pub enum Output {
 }
 
 impl ChatComponent {
-    pub fn new(contents: LinkedList<Content>) -> Self {
+    pub fn new() -> Self {
         Self {
-            messages: MessagesComponent::new(contents),
+            messages: MessagesComponent::new(),
             input: Self::new_textarea(),
             exit_n: 0,
             event: String::new(),
@@ -229,7 +217,7 @@ impl ChatComponent {
         self.cursor_delta = (delta_y, delta_x);
     }
 
-    pub fn render(&mut self, frame: &mut Frame, area: Rect)
+    pub fn render(&mut self, contents: &LinkedList<Content>, frame: &mut Frame, area: Rect)
     where
         Self: Sized,
     {
@@ -238,7 +226,7 @@ impl ChatComponent {
 
         self.area = input_area;
 
-        self.messages.render(frame, messages_area);
+        self.messages.render(contents, frame, messages_area);
         self.input
             .set_block(Block::bordered().title("Input").gray());
         self.input
@@ -250,8 +238,8 @@ impl ChatComponent {
         TextArea::default()
     }
 
-    fn pop_last_assaistant(&mut self) {
-        if let Some(content) = self.messages.contents.back_mut() {
+    fn pop_last_assaistant(&mut self, contents: &mut LinkedList<Content>) {
+        if let Some(content) = contents.back_mut() {
             if content.role == Role::Assistant {
                 self.input.select_all();
                 self.input.cut();
@@ -263,14 +251,14 @@ impl ChatComponent {
         }
     }
 
-    fn submit_message(&mut self) {
+    fn submit_message(&mut self, contents: &mut LinkedList<Content>) {
         let mut new_textarea = Self::new_textarea();
         std::mem::swap(&mut self.input, &mut new_textarea);
         let lines = new_textarea.into_lines();
         let message = lines.join("\n");
 
         if self.rewrite {
-            let assistant = self.messages.contents.back_mut().unwrap();
+            let assistant = contents.back_mut().unwrap();
             assistant.message = message;
             self.rewrite = false;
         } else {
@@ -278,8 +266,8 @@ impl ChatComponent {
                 role: Role::User,
                 message,
             };
-            self.messages.contents.push_back(user.clone());
-            self.messages.contents.push_back(Content {
+            contents.push_back(user.clone());
+            contents.push_back(Content {
                 role: Role::Assistant,
                 message: String::new(),
             });
@@ -287,7 +275,7 @@ impl ChatComponent {
         self.messages.lock_on_bottom = true;
     }
 
-    pub fn handler_input(&mut self, input: Input) -> Output {
+    pub fn handler_input(&mut self, input: Input, contents: &mut LinkedList<Content>) -> Output {
         self.event = format!("{:?}", input);
         let is_event = matches!(&input, Input::Event(..));
 
@@ -296,14 +284,14 @@ impl ChatComponent {
                 if (input.code == KeyCode::Char('j')
                     && input.modifiers.contains(KeyModifiers::CONTROL)) =>
             {
-                self.submit_message();
+                self.submit_message(contents);
                 return Output::Chat;
             }
             Input::Event(Event::Key(input))
                 if (input.code == KeyCode::Char('r')
                     && input.modifiers.contains(KeyModifiers::CONTROL)) =>
             {
-                self.pop_last_assaistant();
+                self.pop_last_assaistant(contents);
             }
             Input::Event(Event::Key(input)) if input.code == KeyCode::Esc => {
                 self.exit_n += 2;
