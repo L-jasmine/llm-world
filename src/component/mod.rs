@@ -15,6 +15,7 @@ use ratatui::{
 use simple_llama::{Content, LlamaCtx, LlamaModelChatStream};
 
 pub mod chat;
+pub mod lab;
 
 #[derive(Debug, Clone)]
 pub enum Token {
@@ -23,18 +24,28 @@ pub enum Token {
 }
 
 pub struct App {
+    pub select_tabs: usize,
     pub chat: chat::ChatComponent,
+    pub lab: lab::Lab,
 }
 
 impl App {
-    pub fn new(prompts: LinkedList<Content>) -> Self {
+    pub fn new(prompts: LinkedList<Content>, prompts_path: String) -> Self {
         Self {
             chat: chat::ChatComponent::new(prompts),
+            lab: lab::Lab {
+                prompts_path,
+                messages: chat::MessagesComponent::new(Default::default()),
+            },
+            select_tabs: 0,
         }
     }
 
     fn prompts(&self) -> &LinkedList<Content> {
-        &self.chat.messages.contents
+        match self.select_tabs {
+            0 => &self.chat.messages.contents,
+            _ => &self.lab.messages.contents,
+        }
     }
 
     pub fn render(&mut self, f: &mut Frame) {
@@ -47,19 +58,36 @@ impl App {
 
         let [tabs_area, main_area, help_area, event_area] = vertical.areas(f.size());
 
-        let tabs = Tabs::new(vec!["Chat", "Setting"])
-            .select(0)
+        let tabs = Tabs::new(vec!["Chat", "Lab"])
+            .select(self.select_tabs)
             .padding("[", "]")
             .block(Block::bordered());
 
         f.render_widget(tabs, tabs_area);
-        self.chat.render(f, main_area);
+        match self.select_tabs {
+            0 => self.chat.render(f, main_area),
+            _ => self.lab.render(f, main_area),
+        }
 
         let help_message = Paragraph::new(format!("help: [Ctrl+R rewrite] [Esc+Esc quit]"));
         f.render_widget(help_message, help_area);
 
         let help_message = Paragraph::new(format!("{}", self.chat.event));
         f.render_widget(help_message, event_area);
+    }
+
+    pub fn handler_input(&mut self, input: Input) -> anyhow::Result<Output> {
+        match input {
+            Input::Event(Event::Key(event)) if event.code == KeyCode::Tab => {
+                self.select_tabs = (self.select_tabs + 1) % 2;
+                Ok(Output::Normal)
+            }
+
+            input => match self.select_tabs {
+                0 => Ok(self.chat.handler_input(input)),
+                _ => self.lab.handler_input(input),
+            },
+        }
     }
 
     pub fn run_loop(mut self, llama: &mut LlamaCtx) -> anyhow::Result<()> {
@@ -117,7 +145,7 @@ impl App {
                     Input::Event(event::read()?)
                 };
 
-                output = self.chat.handler_input(&mut terminal, input);
+                output = self.handler_input(input)?;
             }
             Ok(())
         };

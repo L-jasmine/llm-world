@@ -4,8 +4,12 @@ use std::{
     num::NonZeroU32,
 };
 
+use anyhow::anyhow;
 use clap::Parser;
-use simple_llama::llm::{self as llama, PromptTemplate};
+use simple_llama::{
+    llm::{self as llama, PromptTemplate},
+    Content,
+};
 
 mod component;
 
@@ -62,6 +66,17 @@ enum Engine {
     Rhai,
 }
 
+fn loader_prompt(prompt_file_path: &str) -> anyhow::Result<LinkedList<Content>> {
+    let prompt = std::fs::read_to_string(prompt_file_path)
+        .map_err(|_| anyhow::anyhow!("prompt file `{}` not found", prompt_file_path))?;
+
+    let mut prompt: HashMap<String, LinkedList<Content>> = toml::from_str(&prompt)?;
+    let prompts = prompt
+        .remove("content")
+        .ok_or(anyhow!("'content' not exist!"))?;
+    Ok(prompts)
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
     let cli = Args::parse();
@@ -70,12 +85,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     project.run.fill_default_value();
 
     let (mut ctx, prompts) = {
-        let prompt = std::fs::read_to_string(&project.prompts)
-            .map_err(|_| anyhow::anyhow!("prompt file `{}` not found", project.prompts))?;
-
-        let mut prompt: HashMap<String, LinkedList<simple_llama::llm::Content>> =
-            toml::from_str(&prompt)?;
-        let prompts = prompt.remove("content").unwrap();
+        let prompts = loader_prompt(&project.prompts)?;
 
         {
             let template = project
@@ -101,7 +111,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let app = component::App::new(prompts);
+    let app = component::App::new(prompts, project.prompts.clone());
 
     let res = app.run_loop(&mut ctx);
 

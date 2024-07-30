@@ -1,10 +1,8 @@
 use std::collections::LinkedList;
 
 use crossterm::event::{Event, KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use ratatui::backend::Backend;
 use ratatui::layout::Position;
 use ratatui::style::{Color, Style, Stylize};
-use ratatui::Terminal;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     text::{Line, Text},
@@ -52,10 +50,7 @@ impl MessagesComponent {
         self.last_mouse_event = event;
     }
 
-    pub fn render(&mut self, frame: &mut Frame, area: Rect)
-    where
-        Self: Sized,
-    {
+    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         self.area = area;
         let mut text = Text::default();
         for content in &self.contents {
@@ -292,18 +287,11 @@ impl ChatComponent {
         self.messages.lock_on_bottom = true;
     }
 
-    pub fn handler_input<B: Backend>(
-        &mut self,
-        terminal: &mut Terminal<B>,
-        input: Input,
-    ) -> Output {
+    pub fn handler_input(&mut self, input: Input) -> Output {
         self.event = format!("{:?}", input);
         let is_event = matches!(&input, Input::Event(..));
 
         match input {
-            Input::Event(Event::Key(input)) if input.code == KeyCode::F(5) => {
-                let _ = terminal.clear();
-            }
             Input::Event(Event::Key(input))
                 if (input.code == KeyCode::Char('j')
                     && input.modifiers.contains(KeyModifiers::CONTROL)) =>
