@@ -158,7 +158,6 @@ pub struct ChatComponent {
     last_mouse_event: MouseEvent,
     active: bool,
     area: Rect,
-    exit_n: u8,
     pub event: String,
     rewrite: bool,
 }
@@ -181,7 +180,6 @@ impl ChatComponent {
         Self {
             messages: MessagesComponent::new(),
             input: Self::new_textarea(),
-            exit_n: 0,
             event: String::new(),
             rewrite: false,
             cursor_delta: (0, 0),
@@ -277,7 +275,6 @@ impl ChatComponent {
 
     pub fn handler_input(&mut self, input: Input, contents: &mut LinkedList<Content>) -> Output {
         self.event = format!("{:?}", input);
-        let is_event = matches!(&input, Input::Event(..));
 
         match input {
             Input::Event(Event::Key(input))
@@ -293,12 +290,7 @@ impl ChatComponent {
             {
                 self.pop_last_assaistant(contents);
             }
-            Input::Event(Event::Key(input)) if input.code == KeyCode::Esc => {
-                self.exit_n += 2;
-                if self.exit_n >= 3 {
-                    return Output::Exit;
-                }
-            }
+
             Input::Event(Event::Key(input)) => {
                 self.input.input(input);
             }
@@ -314,9 +306,6 @@ impl ChatComponent {
             }
         }
 
-        if is_event {
-            self.exit_n = self.exit_n.max(1) - 1;
-        }
         Output::Normal
     }
 }

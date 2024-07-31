@@ -25,6 +25,7 @@ pub enum Token {
 
 pub struct App {
     pub select_tabs: usize,
+    pub exit_n: u8,
     pub chat: chat::ChatComponent,
     pub lab: lab::Lab,
     pub prompts_path: String,
@@ -39,6 +40,7 @@ impl App {
                 messages: chat::MessagesComponent::new(),
             },
             select_tabs: 0,
+            exit_n: 0,
             prompts_path,
         }
     }
@@ -76,10 +78,22 @@ impl App {
         input: Input,
         contents: &mut LinkedList<Content>,
     ) -> anyhow::Result<Output> {
+        let last_exit_n = self.exit_n;
+        if matches!(input, Input::Event(..)) {
+            self.exit_n = 0;
+        }
         match input {
             Input::Event(Event::Key(event)) if event.code == KeyCode::Tab => {
                 self.select_tabs = (self.select_tabs + 1) % 2;
                 Ok(Output::Normal)
+            }
+            Input::Event(Event::Key(input)) if input.code == KeyCode::Esc => {
+                self.exit_n = 1;
+                if last_exit_n != 0 {
+                    Ok(Output::Exit)
+                } else {
+                    Ok(Output::Normal)
+                }
             }
             Input::Message(token) => match token {
                 Token::End(end) => {
@@ -126,34 +140,50 @@ impl App {
                         if let Some(c) = prompts.back() {
                             start_content = Some(c.message.clone());
                         }
-                        stream = Some(
-                            llama
-                                .chat(&prompts, simple_llama::SimpleOption::Temp(0.9))
-                                .unwrap(),
-                        )
+                        // let option = simple_llama::SimpleOption::Temp(0.9);
+                        // let option = simple_llama::SimpleOption::TopP(1.0, 20);
+                        let option = simple_llama::SimpleOption::MirostatV2(3.5, 0.25);
+
+                        stream = Some(llama.chat(&prompts, option).unwrap())
                     }
                     Output::Normal => {}
                 }
 
                 let input = if let Some(mut stream_) = stream.take() {
                     // interrupt
-                    if event::poll(Duration::from_secs(0))? {
-                        if let Event::Key(s) = event::read()? {
-                            if s.code == KeyCode::Char('c')
-                                && s.modifiers.contains(KeyModifiers::CONTROL)
-                            {
-                                continue;
+                    let input = if event::poll(Duration::from_secs(0))? {
+                        match event::read()? {
+                            Event::Key(input) => {
+                                if input.code == KeyCode::Char('c')
+                                    && input.modifiers.contains(KeyModifiers::CONTROL)
+                                {
+                                    continue;
+                                } else {
+                                    None
+                                }
                             }
+                            Event::Mouse(input) => Some(Input::Event(Event::Mouse(input))),
+                            _ => None,
                         }
+                    } else {
+                        None
                     };
 
-                    if let Some(token) = stream_.next() {
-                        stream = Some(stream_);
-                        Input::Message(Token::Chunk(token))
-                    } else {
-                        let end: String = stream_.into();
-                        let start_content = start_content.take().unwrap_or_default();
-                        Input::Message(Token::End(start_content + &end))
+                    match input {
+                        Some(input) => {
+                            stream = Some(stream_);
+                            input
+                        }
+                        None => {
+                            if let Some(token) = stream_.next() {
+                                stream = Some(stream_);
+                                Input::Message(Token::Chunk(token))
+                            } else {
+                                let end: String = stream_.into();
+                                let start_content = start_content.take().unwrap_or_default();
+                                Input::Message(Token::End(start_content + &end))
+                            }
+                        }
                     }
                 } else {
                     Input::Event(event::read()?)
