@@ -21,3 +21,4 @@ clap = { version = "4.5.7", features = ["derive"] }
 toml = "0.8.14"
 
 chrono = "0.4.38"
+handlebars = "6.0.0"

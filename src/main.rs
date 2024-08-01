@@ -12,6 +12,7 @@ use simple_llama::{
 };
 
 mod component;
+mod sys;
 
 #[derive(Debug, clap::Parser)]
 struct Args {

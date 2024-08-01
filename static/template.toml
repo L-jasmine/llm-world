@@ -1,0 +1,41 @@
+chat = '''
+{{world.description}}
+
+你叫{{npc.name}}。
+你是{{npc.description}}
+
+你是一个{{#each npc.character}} {{this}} {{/each}}的人
+
+你和{{player.name}}的关系是 {{npc.player_relation}}。
+你觉得 {{player.name}} 是一个 {{npc.player_character}} 的人。
+
+{{#each npc.experience}}
+{{#if @first}}
+以下是与你有关的一些事件：
+{{/if}}
+{{this}}
+{{/each}}
+
+你现在{{npc.state}}。
+你现在的心情是{{npc.mood}}。
+你现在在{{npc.location}}与{{player.name}}对话。
+'''
+
+[update.character]
+question = '''
+这件事之后，{{npc.name}}觉得{{player.name}}是一个什么样的人？简单的一句话概括。20个字
+'''
+prompt = '''
+{{npc.name}}认为{{player.name}}是一个
+'''
+[update.relation]
+question = '''
+这件事之后，{{npc.name}}和{{player.name}}之间的关系从原来的{{npc.player_relation}}变成了什么？不需要分析，只回答。
+'''
+prompt = "{{npc.name}}和{{player.name}}之间的关系变成了"
+
+[update.experience]
+question = '''
+简短的概括这件事是{{player.name}}对{{npc.name}}做了什么？20个字以内
+'''
+prompt = "{{player.name}}对{{npc.name}}"

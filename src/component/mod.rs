@@ -142,7 +142,8 @@ impl App {
                         }
                         // let option = simple_llama::SimpleOption::Temp(0.9);
                         // let option = simple_llama::SimpleOption::TopP(1.0, 20);
-                        let option = simple_llama::SimpleOption::MirostatV2(3.5, 0.25);
+                        // let option = simple_llama::SimpleOption::MirostatV2(3.5, 0.25);
+                        let option = simple_llama::SimpleOption::MirostatV2(2.0, 0.25);
 
                         stream = Some(llama.chat(&prompts, option).unwrap())
                     }
