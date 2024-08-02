@@ -6,10 +6,7 @@ use std::{
 
 use anyhow::anyhow;
 use clap::Parser;
-use simple_llama::{
-    llm::{self as llama, PromptTemplate},
-    Content,
-};
+use sys::llm::{Content, LlamaContextParams, LlamaCtx, LlamaModelParams, LlmModel, PromptTemplate};
 
 mod component;
 mod sys;
@@ -91,17 +88,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         .ok_or(anyhow::anyhow!("template not found"))?
         .clone();
 
-    let model_params: simple_llama::llm::LlamaModelParams =
-        simple_llama::llm::LlamaModelParams::default().with_n_gpu_layers(project.run.n_gpu_layers);
+    let model_params: LlamaModelParams =
+        LlamaModelParams::default().with_n_gpu_layers(project.run.n_gpu_layers);
 
-    let llm = llama::LlmModel::new(project.model_path, model_params, template)
+    let llm = LlmModel::new(project.model_path, model_params, template)
         .map_err(|e| anyhow::anyhow!(e))?;
 
-    let ctx_params = llama::LlamaContextParams::default()
+    let ctx_params = LlamaContextParams::default()
         .with_n_ctx(NonZeroU32::new(project.run.ctx_size))
         .with_n_batch(project.run.n_batch);
 
-    let mut ctx = llama::LlamaCtx::new(llm, ctx_params).unwrap();
+    let mut ctx = LlamaCtx::new(llm, ctx_params).unwrap();
 
     let app = component::App::new(project.prompts.clone());
 

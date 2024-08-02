@@ -1,10 +1,10 @@
 use std::collections::{HashMap, LinkedList};
 
+use crate::sys::llm::Content;
 use crossterm::event::{Event, KeyCode, KeyModifiers};
 use ratatui::{layout::Rect, Frame};
-use simple_llama::Content;
 
-use super::chat::{Input, MessagesComponent, Output};
+use super::{chat::MessagesComponent, Input, Output};
 
 pub struct Lab {
     pub prompts_path: String,

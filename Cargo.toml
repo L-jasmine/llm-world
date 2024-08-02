@@ -7,11 +7,12 @@ edition = "2021"
 env_logger = "0.11.3"
 log = "0.4.22"
 
+llama-cpp-2 = { version = "0.1.62", features = ["dynamic_link"] }
+encoding_rs = "0.8.34"
+
 crossterm = "0.27.0"
 ratatui = { version = "0.27.0", features = ["crossterm"] }
 tui-textarea = "0.5.0"
-simple_llama = { path = "../lua_llama" }
-# simple_llama = { git = "https://github.com/L-jasmine/simple_llama.git" }
 crossbeam = "0.8.4"
 anyhow = "1.0.86"
 

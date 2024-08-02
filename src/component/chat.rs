@@ -1,5 +1,6 @@
 use std::collections::LinkedList;
 
+use crate::sys::llm::{Content, Role};
 use crossterm::event::{Event, KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Position;
 use ratatui::style::{Color, Style, Stylize};
@@ -9,10 +10,9 @@ use ratatui::{
     widgets::{Block, Paragraph},
     Frame,
 };
-use simple_llama::llm::{Content, Role};
 use tui_textarea::TextArea;
 
-use super::Token;
+use super::{Input, Output};
 
 pub struct MessagesComponent {
     cursor: (u16, u16),
@@ -56,7 +56,6 @@ impl MessagesComponent {
             let style = match content.role {
                 Role::Assistant => Style::new().bg(Color::Cyan),
                 Role::User => Style::new().bg(Color::Yellow),
-                Role::Tool => Style::new().bg(Color::Gray),
                 _ => Style::new(),
             };
             text.extend([Line::styled(
@@ -70,11 +69,7 @@ impl MessagesComponent {
                 let mut len = 0;
                 for c in chars {
                     s.push(c);
-                    if c.is_ascii() {
-                        len += 1;
-                    } else {
-                        len += 2;
-                    }
+                    len += if c.is_ascii() { 1 } else { 2 };
                     if len >= max_len || c == '\n' {
                         text.extend(Line::raw(s).style(style));
                         s = String::with_capacity(max_len);
@@ -83,7 +78,8 @@ impl MessagesComponent {
                 }
                 text.extend(Line::raw(s).style(style));
                 // text.extend(Text::raw(&content.message).style(style));
-                text.extend([Line::styled(format!("[{max_len},{len}]"), style)]);
+                // text.extend([Line::styled(format!("[{max_len},{len}]"), style)]);
+                text.extend(Line::default());
             }
         }
 
@@ -160,19 +156,6 @@ pub struct ChatComponent {
     area: Rect,
     pub event: String,
     rewrite: bool,
-}
-
-#[derive(Debug)]
-pub enum Input {
-    Event(Event),
-    Message(Token),
-}
-
-#[derive(Debug)]
-pub enum Output {
-    Exit,
-    Chat,
-    Normal,
 }
 
 impl ChatComponent {

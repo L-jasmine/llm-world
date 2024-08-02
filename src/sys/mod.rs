@@ -1,4 +1,6 @@
-use simple_llama::Content;
+use llm::{Content, Role};
+
+pub mod llm;
 
 pub struct NPC {
     pub name: String,
@@ -35,7 +37,7 @@ pub struct ChatGenerator {
 impl NPC {
     pub fn chat_system(&self, npc: &NPC) -> Content {
         Content {
-            role: simple_llama::Role::System,
+            role: Role::System,
             message: String::new(),
         }
     }
