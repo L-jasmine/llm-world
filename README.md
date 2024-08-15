@@ -7,7 +7,7 @@ The main objective of this project is to explore how ordinary llama models can a
 
 ###  Clone the repository
 ```
-git clone https://github.com/L-jasmine/script-llama-tui
+git clone https://github.com/L-jasmine/llm-world
 ```
 
 ### Download Llama model.
@@ -30,7 +30,7 @@ export LLAMA_LIB={LLama_Dynamic_Library_Dir}
 Use the following command to run the example program:
 
 ```shell
-cargo run -- --model-path Meta-Llama-3-8B-Instruct-Q5_K_M.gguf --model-type llama3 --prompt-path static/prompt.lua.toml -e lua -c 2048 -n 128
+cargo run --release -- -p static/project.toml
 ```
 
 ## Contributions

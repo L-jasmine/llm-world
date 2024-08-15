@@ -1,0 +1,13 @@
+[player]
+name = "虎先锋"
+
+[npc]
+name = "柳如烟"
+description = "一个玄幻世界的修仙者"
+character = ["善良", "聪明", "勇敢"]
+mood = "开心"
+experience = []
+current_map = "修炼练功房"
+state = "在修炼"
+player_relation = "朋友"
+player_character = "善良"

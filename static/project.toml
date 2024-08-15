@@ -1,17 +1,22 @@
+# model_path = "../models/Meta-Llama-3.1-8B-Instruct-Q5_K_M.gguf"
+# template = "llama3"
+# model_path = "../models/internlm2_5-7b-chat-Q5_K_M.gguf"
+# template = "qwen"
+# prompts = "./static/prompt.tool.toml"
 model_path = "../models/causallm_7b.Q6_K.gguf"
 template = "qwen"
-prompts = "./static/prompt.toml"
+prompts = "./static/prompt.map.toml"
 
 [run]
-ctx_size = 8192
-n_batch = 128
+ctx_size = 4096
+n_batch = 64
 n_gpu_layers = 100
 
 [templates.qwen]
 header_prefix = "<|im_start|>"
 header_suffix = "\n"
 end_of_content = "<|im_end|>\n"
-stops = ["<|im_end|>", "<|im_end|>\n", "<|im_start|>"]
+stops = ["<|im_end|>", "<|im_end|>\n", "<|im_"]
 
 [templates.llama3]
 header_prefix = "<|start_header_id|>"

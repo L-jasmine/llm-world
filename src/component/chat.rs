@@ -1,39 +1,32 @@
 use std::collections::LinkedList;
 
+use crate::sys::llm::{Content, Role};
 use crossterm::event::{Event, KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use ratatui::backend::Backend;
 use ratatui::layout::Position;
 use ratatui::style::{Color, Style, Stylize};
-use ratatui::Terminal;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     text::{Line, Text},
     widgets::{Block, Paragraph},
     Frame,
 };
-use simple_llama::llm::{Content, Role};
 use tui_textarea::TextArea;
 
-use crate::chat::im_channel::Message;
-use crate::llm::local_llm::Token;
+use super::{Input, Output};
 
 pub struct MessagesComponent {
-    contents: LinkedList<Content>,
     cursor: (u16, u16),
     last_mouse_event: MouseEvent,
     lock_on_bottom: bool,
-    pub(super) wait_token: bool,
     area: Rect,
     active: bool,
 }
 
 impl MessagesComponent {
-    pub fn new(contents: LinkedList<Content>) -> Self {
+    pub fn new() -> Self {
         Self {
-            contents,
             cursor: (0, 0),
             lock_on_bottom: true,
-            wait_token: false,
             active: true,
             area: Rect::default(),
             last_mouse_event: MouseEvent {
@@ -55,17 +48,14 @@ impl MessagesComponent {
         self.last_mouse_event = event;
     }
 
-    pub fn render(&mut self, frame: &mut Frame, area: Rect)
-    where
-        Self: Sized,
-    {
+    pub fn render(&mut self, contents: &LinkedList<Content>, frame: &mut Frame, area: Rect) {
         self.area = area;
         let mut text = Text::default();
-        for content in &self.contents {
+        let contents = contents.into_iter();
+        for content in contents {
             let style = match content.role {
                 Role::Assistant => Style::new().bg(Color::Cyan),
                 Role::User => Style::new().bg(Color::Yellow),
-                Role::Tool => Style::new().bg(Color::Gray),
                 _ => Style::new(),
             };
             text.extend([Line::styled(
@@ -79,12 +69,8 @@ impl MessagesComponent {
                 let mut len = 0;
                 for c in chars {
                     s.push(c);
-                    if c.is_ascii() {
-                        len += 1;
-                    } else {
-                        len += 2;
-                    }
-                    if len >= max_len {
+                    len += if c.is_ascii() { 1 } else { 2 };
+                    if len >= max_len || c == '\n' {
                         text.extend(Line::raw(s).style(style));
                         s = String::with_capacity(max_len);
                         len = 0;
@@ -92,7 +78,8 @@ impl MessagesComponent {
                 }
                 text.extend(Line::raw(s).style(style));
                 // text.extend(Text::raw(&content.message).style(style));
-                text.extend([Line::styled(format!("[{max_len},{len}]"), style)]);
+                // text.extend([Line::styled(format!("[{max_len},{len}]"), style)]);
+                text.extend(Line::default());
             }
         }
 
@@ -134,21 +121,6 @@ impl MessagesComponent {
 
     pub fn handler_input(&mut self, input: Input) {
         match input {
-            Input::Message(Message::Assistant(Token::Start)) => {
-                self.wait_token = true;
-            }
-            Input::Message(Message::Assistant(Token::Chunk(chunk))) => {
-                if let Some(content) = self.contents.back_mut() {
-                    content.message.push_str(&chunk);
-                }
-            }
-            Input::Message(Message::Assistant(Token::End(chunk))) => {
-                self.wait_token = false;
-                if let Some(content) = self.contents.back_mut() {
-                    content.message = chunk;
-                }
-            }
-
             Input::Event(Event::Mouse(event)) => {
                 match event.kind {
                     MouseEventKind::ScrollDown => {
@@ -176,35 +148,22 @@ impl MessagesComponent {
 }
 
 pub struct ChatComponent {
-    user_tx: crossbeam::channel::Sender<Message>,
-    messages: MessagesComponent,
+    pub messages: MessagesComponent,
     input: TextArea<'static>,
     cursor_delta: (i16, i16),
     last_mouse_event: MouseEvent,
     active: bool,
     area: Rect,
-    exit_n: u8,
     pub event: String,
     rewrite: bool,
 }
 
-#[derive(Debug)]
-pub enum Input {
-    Event(Event),
-    Message(Message),
-}
-
 impl ChatComponent {
-    pub fn new(
-        contents: LinkedList<Content>,
-        user_tx: crossbeam::channel::Sender<Message>,
-    ) -> Self {
+    pub fn new() -> Self {
         Self {
-            messages: MessagesComponent::new(contents),
+            messages: MessagesComponent::new(),
             input: Self::new_textarea(),
-            exit_n: 0,
             event: String::new(),
-            user_tx,
             rewrite: false,
             cursor_delta: (0, 0),
             last_mouse_event: MouseEvent {
@@ -239,7 +198,7 @@ impl ChatComponent {
         self.cursor_delta = (delta_y, delta_x);
     }
 
-    pub fn render(&mut self, frame: &mut Frame, area: Rect)
+    pub fn render(&mut self, contents: &LinkedList<Content>, frame: &mut Frame, area: Rect)
     where
         Self: Sized,
     {
@@ -248,14 +207,9 @@ impl ChatComponent {
 
         self.area = input_area;
 
-        self.messages.render(frame, messages_area);
-        if self.messages.wait_token {
-            self.input
-                .set_block(Block::bordered().title("Input").yellow())
-        } else {
-            self.input
-                .set_block(Block::bordered().title("Input").gray())
-        }
+        self.messages.render(contents, frame, messages_area);
+        self.input
+            .set_block(Block::bordered().title("Input").gray());
         self.input
             .scroll((-self.cursor_delta.0, -self.cursor_delta.1));
         frame.render_widget(self.input.widget(), input_area);
@@ -265,8 +219,8 @@ impl ChatComponent {
         TextArea::default()
     }
 
-    fn pop_last_assaistant(&mut self) {
-        if let Some(content) = self.messages.contents.back_mut() {
+    fn pop_last_assaistant(&mut self, contents: &mut LinkedList<Content>) {
+        if let Some(content) = contents.back_mut() {
             if content.role == Role::Assistant {
                 self.input.select_all();
                 self.input.cut();
@@ -278,63 +232,48 @@ impl ChatComponent {
         }
     }
 
-    fn submit_message(&mut self) {
+    fn submit_message(&mut self, contents: &mut LinkedList<Content>) {
         let mut new_textarea = Self::new_textarea();
         std::mem::swap(&mut self.input, &mut new_textarea);
         let lines = new_textarea.into_lines();
         let message = lines.join("\n");
 
         if self.rewrite {
-            let assistant = self.messages.contents.back_mut().unwrap();
+            let assistant = contents.back_mut().unwrap();
             assistant.message = message;
-            let assistant = assistant.clone();
-
-            self.user_tx.send(Message::Generate(assistant)).unwrap();
             self.rewrite = false;
         } else {
             let user = Content {
                 role: Role::User,
                 message,
             };
-            self.messages.contents.push_back(user.clone());
-            self.messages.contents.push_back(Content {
+            contents.push_back(user.clone());
+            contents.push_back(Content {
                 role: Role::Assistant,
                 message: String::new(),
             });
-
-            self.user_tx.send(Message::GenerateByUser(user)).unwrap();
         }
         self.messages.lock_on_bottom = true;
     }
 
-    pub fn handler_input<B: Backend>(&mut self, terminal: &mut Terminal<B>, input: Input) -> bool {
+    pub fn handler_input(&mut self, input: Input, contents: &mut LinkedList<Content>) -> Output {
         self.event = format!("{:?}", input);
-        let is_event = matches!(&input, Input::Event(..));
 
         match input {
-            Input::Event(Event::Key(input)) if input.code == KeyCode::F(5) => {
-                let _ = terminal.clear();
-            }
             Input::Event(Event::Key(input))
                 if (input.code == KeyCode::Char('j')
                     && input.modifiers.contains(KeyModifiers::CONTROL)) =>
             {
-                if !self.messages.wait_token {
-                    self.submit_message();
-                }
+                self.submit_message(contents);
+                return Output::Chat;
             }
             Input::Event(Event::Key(input))
                 if (input.code == KeyCode::Char('r')
                     && input.modifiers.contains(KeyModifiers::CONTROL)) =>
             {
-                if !self.messages.wait_token {
-                    self.pop_last_assaistant();
-                }
+                self.pop_last_assaistant(contents);
             }
-            Input::Event(Event::Key(input)) if input.code == KeyCode::Esc => {
-                self.exit_n += 2;
-                return self.exit_n < 3;
-            }
+
             Input::Event(Event::Key(input)) => {
                 self.input.input(input);
             }
@@ -350,9 +289,6 @@ impl ChatComponent {
             }
         }
 
-        if is_event {
-            self.exit_n = self.exit_n.max(1) - 1;
-        }
-        true
+        Output::Normal
     }
 }
