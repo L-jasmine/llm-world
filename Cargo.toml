@@ -1,5 +1,5 @@
 [package]
-name = "script-llama-tui"
+name = "llm-world"
 version = "0.1.0"
 edition = "2021"
 
